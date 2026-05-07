@@ -48,7 +48,14 @@ class RateLimiter:
             ModelType.FLASH: _ModelState(),
             ModelType.FLASH_LITE: _ModelState(),
         }
-        self._lock = asyncio.Lock()
+
+    @property
+    def _lock(self) -> asyncio.Lock:
+        loop = asyncio.get_event_loop()
+        attr = f"_loop_lock_{id(loop)}"
+        if not hasattr(self, attr):
+            setattr(self, attr, asyncio.Lock())
+        return getattr(self, attr)
 
     def _reset_if_new_day(self, model: ModelType) -> None:
         """Reset daily counters on date change."""
@@ -116,6 +123,64 @@ class RateLimiter:
         if len(s.minute_window) < limits["rpm"]:
             return 0.0
         return max(0.0, 60 - (time.time() - s.minute_window[0]))
+
+class SimpleRateLimiter:
+    """
+    Standalone rate limiter parameterized by RPM and optional RPD.
+
+    Unlike the Gemini-specific RateLimiter above, this can be used for any API.
+    Pass rpd=None to disable daily limit tracking.
+    """
+
+    def __init__(self, rpm: int, rpd: int | None = None) -> None:
+        self._rpm = rpm
+        self._rpd = rpd
+        self._state = _ModelState()
+
+    @property
+    def _lock(self) -> asyncio.Lock:
+        loop = asyncio.get_event_loop()
+        attr = f"_loop_lock_{id(loop)}"
+        if not hasattr(self, attr):
+            setattr(self, attr, asyncio.Lock())
+        return getattr(self, attr)
+
+    def _reset_if_new_day(self) -> None:
+        s = self._state
+        if s.last_reset < date.today():
+            s.daily_count = 0
+            s.daily_tokens = 0
+            s.last_reset = date.today()
+
+    def _prune_minute_window(self) -> None:
+        window = self._state.minute_window
+        now = time.time()
+        while window and now - window[0] > 60:
+            window.popleft()
+
+    async def acquire(self) -> None:
+        """Wait until a request slot is available, then reserve it."""
+        async with self._lock:
+            self._reset_if_new_day()
+            s = self._state
+
+            # Hard stop on daily limit (if configured)
+            if self._rpd is not None and s.daily_count >= self._rpd:
+                raise RuntimeError(
+                    f"Daily limit ({self._rpd}) reached. Resume tomorrow."
+                )
+
+            # Wait for RPM slot
+            self._prune_minute_window()
+            while len(s.minute_window) >= self._rpm:
+                wait = 60 - (time.time() - s.minute_window[0]) + 0.1
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                self._prune_minute_window()
+
+            # Record request
+            s.minute_window.append(time.time())
+            s.daily_count += 1
 
 
 # Global instance
