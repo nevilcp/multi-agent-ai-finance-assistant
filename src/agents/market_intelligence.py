@@ -1,4 +1,5 @@
 """Market intelligence — deterministic data fetch + single LLM synthesis."""
+import asyncio
 import time
 from src.state import GraphState, MarketIntelReport, MarketDataPoint
 from src.utils.gemini_client import gemini_client, ModelType
@@ -38,7 +39,17 @@ async def market_intelligence_node(state: GraphState) -> GraphState:
         symbols = state["portfolio_symbols"]
 
         # Step 1: Deterministic data fetch
-        quotes = finnhub_tools.get_batch_quotes(symbols)
+        loop = asyncio.get_event_loop()
+
+        quotes = await loop.run_in_executor(
+            None, finnhub_tools.get_batch_quotes, symbols
+        )
+
+        news_items = {}
+        for s in symbols[:3]:
+            news_items[s] = await loop.run_in_executor(
+                None, finnhub_tools.get_company_news, s, 3
+            )
 
         quote_lines = []
         data_points = []
@@ -54,7 +65,7 @@ async def market_intelligence_node(state: GraphState) -> GraphState:
 
         news_lines = []
         for s in symbols[:3]:
-            for n in finnhub_tools.get_company_news(s, limit=3):
+            for n in news_items[s]:
                 news_lines.append(f"[{s}] {n['headline']}")
 
         # Step 2: Single LLM synthesis
@@ -63,7 +74,7 @@ async def market_intelligence_node(state: GraphState) -> GraphState:
                 quotes="\n".join(quote_lines) or "No data available",
                 news="\n".join(news_lines) or "No news available",
             ),
-            model=ModelType.FLASH,
+            model=ModelType.FLASH_LITE,
             temperature=0.3,
             max_tokens=1024,
         )
