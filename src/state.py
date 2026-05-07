@@ -118,6 +118,7 @@ class GraphState(TypedDict):
     # Observability
     errors: List[str]
     current_phase: str
+    feedback_applied: bool
 
 
 def create_initial_state(
@@ -142,4 +143,53 @@ def create_initial_state(
         approval_result=None,
         errors=[],
         current_phase="input",
+        feedback_applied=False,
     )
+
+
+def compute_confidence_score(
+    strategy: InvestmentStrategy,
+    state: GraphState,
+) -> float:
+    """Deterministically compute confidence_score from pipeline signals.
+
+    Starts at 1.0 and applies deductions based on data completeness:
+      - No expense report (watchlist mode):         -0.20
+      - Pipeline errors: -0.10 per error, max       -0.30
+      - Stale/cached market data:                    -0.10
+      - Under-diversified (< 2 recommendations):    -0.15
+      - No identified savings potential:             -0.10
+
+    Returns a float in [0.0, 1.0] rounded to 2 decimal places.
+    """
+    score = 1.0
+
+    # (1) No expense data — advice is market-only, less personalised
+    if state.get("expense_report") is None:
+        score -= 0.20
+
+    # (2) Prior pipeline errors degrade data quality
+    errors = state.get("errors", [])
+    if errors:
+        score -= min(len(errors) * 0.10, 0.30)
+
+    # (3) Stale market data reduces price reliability
+    market_intel = state.get("market_intel")
+    if market_intel:
+        freshness = market_intel.get("data_freshness", "live")
+        if freshness != "live":
+            score -= 0.10
+    else:
+        # No market data at all is worse than stale
+        score -= 0.10
+
+    # (4) Under-diversified strategy
+    if len(strategy.investment_recommendations) < 2:
+        score -= 0.15
+
+    # (5) No savings potential identified
+    expense_report = state.get("expense_report")
+    if expense_report is None or not expense_report.get("savings_potential"):
+        score -= 0.10
+
+    return round(max(score, 0.0), 2)
