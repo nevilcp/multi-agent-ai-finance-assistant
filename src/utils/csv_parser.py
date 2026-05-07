@@ -15,6 +15,8 @@ _INJECTION_PATTERNS = [
     re.compile(r"you\s+are\s+now\s+", re.IGNORECASE),
     re.compile(r"forget\s+(everything|all|your)", re.IGNORECASE),
     re.compile(r"new\s+instructions?:", re.IGNORECASE),
+    re.compile(r"system\s*prompt", re.IGNORECASE),
+    re.compile(r"<\s*/?(?:system|instruction|prompt)[^>]*>", re.IGNORECASE),
 ]
 
 
@@ -112,7 +114,7 @@ class CSVParser:
             raise ValueError("No amount column found")
 
         # Parse and sort dates
-        df["normalized_date"] = pd.to_datetime(df[mappings["date"]], errors="coerce", dayfirst=True)
+        df["normalized_date"] = pd.to_datetime(df[mappings["date"]], errors="coerce", format="mixed")
         df = df.sort_values("normalized_date")
 
         valid = df["normalized_date"].dropna()
