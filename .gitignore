@@ -1,36 +1,60 @@
-# Secrets
+# Environment
 .env
-.env.local
-.env.development
-.env.test
-.env.production
+.env.*
+!.env.example
 
 # Python
-__pycache__/
+!src/**
+**/__pycache__/
 *.py[cod]
 *.pyd
+*.so
+
+# Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Tests
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
+.coverage.*
 htmlcov/
+tests/evals/results/*.jsonl
+tests/evals/results/*.md
 
-# Virtual environments
-.venv/
-venv/
-
-# Build artifacts
+# Build
 build/
 dist/
 *.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Editor/OS
+# System
 .DS_Store
+Thumbs.db
 .vscode/
+.idea/
+*.swp
+*.bak
+*~
 
-# Project-generated outputs
+# Outputs
 logs/
 output/
+*.log
+.python-version
+.ipynb_checkpoints/
 
+# Data
+*.csv
+!data/sample_*.csv
+
+# Scratch
 plan.md
 walkthrough.md
+miscellaneous/
