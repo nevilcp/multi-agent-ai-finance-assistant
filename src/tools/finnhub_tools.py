@@ -1,4 +1,5 @@
-"""Finnhub API wrapper with caching."""
+"""Finnhub API wrapper with caching and rate limiting."""
+import asyncio
 import finnhub
 from typing import List, Optional
 from dataclasses import dataclass
@@ -6,9 +7,24 @@ from datetime import datetime, timedelta
 
 from src.config import config
 from src.utils.cache import cache
+from src.utils.rate_limiter import SimpleRateLimiter
 from src.observability.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Finnhub free tier: 60 API calls per minute, no daily cap.
+_finnhub_limiter = SimpleRateLimiter(rpm=60, rpd=None)
+
+
+def _acquire_finnhub_slot() -> None:
+    """Acquire a rate-limiter slot, handling both async and sync contexts."""
+    try:
+        loop = asyncio.get_running_loop()
+        # We're inside an async context — schedule and block on the coroutine.
+        loop.run_until_complete(_finnhub_limiter.acquire())
+    except RuntimeError:
+        # No running event loop (e.g. tests, standalone scripts).
+        asyncio.run(_finnhub_limiter.acquire())
 
 
 @dataclass
@@ -40,6 +56,8 @@ class FinnhubTools:
         if cached:
             return QuoteResult(**cached)
 
+        _acquire_finnhub_slot()
+
         try:
             d = self.client.quote(symbol.upper())
             if d.get("c", 0) == 0:
@@ -65,6 +83,8 @@ class FinnhubTools:
         cached = cache.get("news", symbol)
         if cached:
             return cached
+
+        _acquire_finnhub_slot()
 
         try:
             end = datetime.now()

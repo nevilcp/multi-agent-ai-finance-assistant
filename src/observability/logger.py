@@ -32,7 +32,8 @@ class StructuredLogger:
         cls._session_id = session_id
         log_dir = Path("logs")
         log_dir.mkdir(exist_ok=True)
-        cls._file_handler = logging.FileHandler(log_dir / f"session_{session_id}.jsonl")
+        ts = datetime.now().strftime("%Y%m%dT%H%M%S")
+        cls._file_handler = logging.FileHandler(log_dir / f"session_{ts}.jsonl")
         cls._file_handler.setFormatter(logging.Formatter("%(message)s"))
 
     def _emit(self, level: str, event: str, **kw: Any) -> None:
