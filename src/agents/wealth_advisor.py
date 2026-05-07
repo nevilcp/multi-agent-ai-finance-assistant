@@ -1,6 +1,6 @@
 """Wealth advisor — synthesizes expense + market data into strategy."""
 import time
-from src.state import GraphState, InvestmentStrategy, UserPreferences
+from src.state import GraphState, InvestmentStrategy, UserPreferences, compute_confidence_score
 from src.utils.gemini_client import gemini_client, ModelType
 from src.observability.logger import get_logger
 
@@ -25,13 +25,16 @@ Create a strategy with:
 3. investment_recommendations: list with symbol, action (BUY/HOLD/SELL/REDUCE), allocation_percent, rationale
 4. risk_assessment: brief assessment of portfolio risk
 5. action_items: 5-7 specific, actionable steps
-6. confidence_score: 0.0-1.0 reflecting data completeness
+6. confidence_score: set to 0.5 (will be recomputed by the system)
 
 Guidelines:
 - No single allocation should exceed 30%
 - Total allocations must sum to 100% or less
 - Action items must be specific and immediately actionable
 - Do NOT recommend day trading, margin, leverage, options, futures, or crypto
+- If no expense data is provided (watchlist mode), set monthly_savings_target to 0.0
+  and savings_breakdown to an empty dict {{}}. Focus entirely on portfolio allocation
+  and market-driven recommendations.
 """
 
 
@@ -86,6 +89,9 @@ async def wealth_advisor_node(state: GraphState) -> GraphState:
             model=ModelType.FLASH,
             temperature=0.4,
         )
+
+        # Override LLM's placeholder with deterministic confidence
+        strategy.confidence_score = compute_confidence_score(strategy, state)
 
         state["investment_strategy"] = strategy.model_dump()
         state["current_phase"] = "complete"
