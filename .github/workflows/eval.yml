@@ -1,0 +1,56 @@
+# ============================================================================
+# Eval Suite — Offline (CI) + Live (manual)
+#
+# This workflow runs the offline eval tier on every push/PR to main.
+# Offline tests require NO API keys and validate schema correctness,
+# guardrail effectiveness, and pipeline routing logic.
+#
+# Live evals are excluded from CI because they require real Gemini and
+# Finnhub API keys and consume paid API quota.
+#
+# To run live evals locally:
+#   GOOGLE_API_KEY=... FINNHUB_API_KEY=... python tests/evals/run_evals.py --mode live
+#
+# Or directly:
+#   GOOGLE_API_KEY=... FINNHUB_API_KEY=... pytest tests/evals/ -m live -v -s
+# ============================================================================
+
+name: Eval Suite
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  offline-evals:
+    name: Offline Evals (no API keys)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-json-report
+
+      - name: Run offline eval suite
+        run: python tests/evals/run_evals.py --mode offline --output
+
+      - name: Upload eval results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: tests/evals/results/
+          retention-days: 14
